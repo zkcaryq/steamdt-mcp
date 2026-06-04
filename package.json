@@ -1,0 +1,17 @@
+{
+  "name": "steamdt-mcp",
+  "version": "2.1.0",
+  "description": "SteamDT MCP server for CS2 skin market analysis",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node test/whitebox.test.js && node test/blackbox.test.js",
+    "test:whitebox": "node test/whitebox.test.js",
+    "test:blackbox": "node test/blackbox.test.js"
+  },
+  "license": "MIT"
+}
