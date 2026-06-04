@@ -7,7 +7,7 @@ SteamDT MCP 是一款面向 CS2 饰品交易分析的 [Model Context Protocol (M
 | 分类 | 工具 | 说明 |
 |------|------|------|
 | 基础数据 | `steamdt_get_base_info` | 获取全量 CS2 饰品基础信息列表 |
-| 搜索 | `steamdt_search_item_by_name` | 中/英文模糊搜索饰品 |
+| 搜索 | `steamdt_search_item_by_name` | 中/英文模糊搜索 + 智能款式识别 |
 | 价格查询 | `steamdt_get_price_single` | 单品全平台在售/求购价格 |
 | | `steamdt_get_price_batch` | 批量查询（最多 100 个） |
 | | `steamdt_get_price_avg7d` | N 天均价查询 |
@@ -157,16 +157,34 @@ STEAMDT_CACHE_DIR=.cache                      # 缓存目录
 
 > ⚠️ 必须先调用 `steamdt_get_base_info` 建立缓存后才能使用搜索功能。
 
+**智能款式识别**：自动识别查询中的特殊款式关键词，剥离后搜索基础物品，并在结果中返回对应的 `specialStyle` 参数值，可直接用于 `steamdt_get_item_kline` 的款式过滤。
+
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `query` | string | 是 | - | 搜索关键词（中英文均可，支持分词） |
+| `query` | string | 是 | - | 搜索关键词（中英文均可，支持分词，可含款式关键词） |
 | `limit` | integer | 否 | 10 | 返回数量上限 |
+
+**款式关键词支持表**:
+
+| 类别 | 示例关键词 | 返回 `specialStyle` |
+|------|-----------|---------------------|
+| 多普勒相位 | `P1` `P2` `P3` `P4` `Phase 1` | `p1` `p2` `p3` `p4` |
+| 多普勒宝石 | `红宝石` `蓝宝石` `绿宝石` `黑珍珠` `ruby` `sapphire` `emerald` `blackpearl` | `ruby` `sapphire` `emerald` `blackpearl` |
+| 渐变档位 | `一档`~`十档` `冰火一档` `1st`~`10th` | `1st`~`10th` |
+| 表面淬火 | `T1` `T2` `T3` `T4` `Tier 1` | `t1` `t2` `t3` `t4` |
+| 单面全蓝 | `单面全蓝` `全蓝` `singleblue` | `singleblue` |
+| 绯红和服 | `和服一档`~`和服六档` `crimson kimono p1` | `crimson_kimono_p1`~`p6` |
+| 官图太阳 | `官图太阳` `sun` | `sun` |
 
 **使用示例**:
 ```
-搜索 "ak 火蛇" → AK-47 | Fire Serpent
-搜索 "m9 doppler" → ★ M9 Bayonet | Doppler
-搜索 "印花 renas" → Sticker | Renas
+搜索 "P2 蝴蝶刀"          → 自动识别 P2，搜索"蝴蝶刀"，返回 specialStyle: "p2"
+搜索 "红宝石 M9"          → 自动识别 红宝石，搜索"M9"，返回 specialStyle: "ruby"
+搜索 "渐变大理石 一档"     → 自动识别 一档，搜索"渐变大理石"，返回 specialStyle: "1st"
+搜索 "和服三档"            → 自动识别 和服三档，返回 specialStyle: "crimson_kimono_p3"
+搜索 "ak 表面淬火 t2"     → 自动识别 T2，搜索"ak 表面淬火"，返回 specialStyle: "t2"
+搜索 "黑珍珠"（无物品名）   → 自动回退搜索"多普勒"，返回 specialStyle: "blackpearl"
+搜索 "印花 renas"          → 普通搜索，无款式识别
 ```
 
 ---
