@@ -23,7 +23,7 @@ const TOOLS = [
   },
   {
     name: 'steamdt_search_item_by_name',
-    description: '根据中文名或英文名模糊搜索饰品，返回匹配的 marketHashName。需要先调用 steamdt_get_base_info 建立缓存。',
+    description: '根据中文名或英文名模糊搜索饰品，返回匹配的 marketHashName。需要先调用 steamdt_get_base_info 建立缓存。自动识别查询中的特殊款式关键词（P1-P4、红宝石/蓝宝石/绿宝石/黑珍珠、一档~十档、T1-T4、和服档位、单面全蓝等），并返回对应的 specialStyle 参数值。',
     inputSchema: { type: 'object', properties: { query: { type: 'string', description: '搜索关键词（中英文均可，支持分词）' }, limit: { type: 'integer', description: '返回数量上限，默认 10', default: 10 } }, required: ['query'] }
   },
   {

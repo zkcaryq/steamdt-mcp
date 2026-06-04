@@ -159,23 +159,169 @@ function containsAllKeywords(query, name, marketHashName) {
   return true;
 }
 
+// ── Style Detection Engine ──────────────────────────────────────────────────
+// Regex escape helper
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Cached style detectors — built once from SPECIAL_STYLES + extra aliases
+let _styleDetectors = null;
+function getStyleDetectors() {
+  if (_styleDetectors) return _styleDetectors;
+
+  const detectors = [];
+
+  function add(keywords, category, key, label) {
+    for (const kw of keywords) {
+      detectors.push({ keyword: kw.toLowerCase(), category, key, label, len: kw.length });
+    }
+  }
+
+  // Phase / Doppler
+  add(['p1', 'phase1', 'phase 1'], 'PHASE', 'p1', 'P1 (Phase 1)');
+  add(['p2', 'phase2', 'phase 2'], 'PHASE', 'p2', 'P2 (Phase 2)');
+  add(['p3', 'phase3', 'phase 3'], 'PHASE', 'p3', 'P3 (Phase 3)');
+  add(['p4', 'phase4', 'phase 4'], 'PHASE', 'p4', 'P4 (Phase 4)');
+  add(['ruby', '红宝石', '紅寶石'], 'PHASE', 'ruby', '红宝石 (Ruby)');
+  add(['sapphire', 'saphire', '蓝宝石', '藍寶石'], 'PHASE', 'sapphire', '蓝宝石 (Sapphire)');
+  add(['emerald', '绿宝石', '綠寶石'], 'PHASE', 'emerald', '绿宝石 (Emerald)');
+  add(['blackpearl', 'black pearl', 'black_p', '黑珍珠', '黑真珠'], 'PHASE', 'blackpearl', '黑珍珠 (Black Pearl)');
+
+  // Rank / 档位 (Gradient Marble Fade, Crimson Web etc)
+  add(['1st', '一档', '冰火一档'], 'RANK', '1st', '一档 (1st)');
+  add(['2nd', '二档', '冰火二档'], 'RANK', '2nd', '二档 (2nd)');
+  add(['3rd', '三档', '冰火三档'], 'RANK', '3rd', '三档 (3rd)');
+  add(['4th', '四档', '冰火四档'], 'RANK', '4th', '四档 (4th)');
+  add(['5th', '五档', '冰火五档'], 'RANK', '5th', '五档 (5th)');
+  add(['6th', '六档', '冰火六档'], 'RANK', '6th', '六档 (6th)');
+  add(['7th', '七档', '冰火七档'], 'RANK', '7th', '七档 (7th)');
+  add(['8th', '八档', '冰火八档'], 'RANK', '8th', '八档 (8th)');
+  add(['9th', '九档', '冰火九档'], 'RANK', '9th', '九档 (9th)');
+  add(['10th', '十档', '冰火十档'], 'RANK', '10th', '十档 (10th)');
+
+  // Tier (Case Hardened etc)
+  add(['t1', 'tier1', 'tier 1'], 'TIER', 't1', 'T1');
+  add(['t2', 'tier2', 'tier 2'], 'TIER', 't2', 'T2');
+  add(['t3', 'tier3', 'tier 3'], 'TIER', 't3', 'T3');
+  add(['t4', 'tier4', 'tier 4'], 'TIER', 't4', 'T4');
+
+  // Single Blue
+  add(['singleblue', 'single blue', '单面全蓝', '全蓝', '单蓝'], 'SINGLEBLUE', 'singleblue', '单面全蓝 (Single Blue)');
+
+  // Sun
+  add(['sun', '官图太阳', '官图'], 'SUN', 'sun', '官图太阳 (Sun)');
+
+  // Crimson Kimono — complex combos: 和服 + stage
+  for (let i = 1; i <= 6; i++) {
+    const key = `crimson_kimono_p${i}`;
+    const cnNum = ['', '一', '二', '三', '四', '五', '六'][i];
+    const cnLabel = `${cnNum}档`;
+    // Many variations users might type
+    add([
+      key,
+      `crimson kimono p${i}`,
+      `crimson kimono ${i}`,
+      `crimson kimono${i}`,
+      `crimson p${i}`,
+      `和服${cnNum}档`,
+      `和服 ${cnNum}档`,
+      `和服p${i}`,
+      `和服 p${i}`,
+      `和服${cnLabel}`,
+      `和服 ${i}`,
+      `和服${i}`,
+    ], 'CRIMSON_KIMONO', key, `绯红和服 ${cnLabel}`);
+  }
+
+  // Sort by keyword length descending → greedy longest-match first
+  detectors.sort((a, b) => b.len - a.len);
+  _styleDetectors = detectors;
+  return detectors;
+}
+
+// Detect special-style keywords in a query, return cleaned query + matched styles
+function detectStyleFromQuery(query) {
+  let cleaned = query.toLowerCase().replace(/\s+/g, ' ').trim();
+  const detectors = getStyleDetectors();
+  const detected = [];
+
+  for (const d of detectors) {
+    const idx = cleaned.indexOf(d.keyword);
+    if (idx === -1) continue;
+
+    // Short alphanumeric-only keywords (p1, t2, sun) require word boundaries
+    if (d.keyword.length <= 3 && /^[a-z0-9]+$/.test(d.keyword)) {
+      const before = idx > 0 ? cleaned[idx - 1] : ' ';
+      const after = idx + d.keyword.length < cleaned.length ? cleaned[idx + d.keyword.length] : ' ';
+      if (/[a-z0-9]/.test(before) || /[a-z0-9]/.test(after)) continue;
+    }
+
+    detected.push({ category: d.category, key: d.key, label: d.label });
+    cleaned = (cleaned.slice(0, idx) + ' ' + cleaned.slice(idx + d.keyword.length))
+      .replace(/\s+/g, ' ').trim();
+  }
+
+  // Deduplicate by category+key
+  const seen = new Set();
+  const unique = detected.filter(d => {
+    const id = `${d.category}:${d.key}`;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+
+  return { styles: unique, cleanedQuery: cleaned };
+}
+
+// Fallback search when all query words are style keywords (e.g. just "蓝宝石" or "p2")
+function getFallbackQuery(styles) {
+  for (const s of styles) {
+    if (s.category === 'PHASE') return '多普勒 doppler';
+    if (s.category === 'RANK') return '渐变大理石 marble fade';
+    if (s.category === 'TIER') return '表面淬火 case hardened';
+    if (s.category === 'CRIMSON_KIMONO') return '和服 crimson kimono';
+    if (s.category === 'SINGLEBLUE') return '表面淬火 case hardened';
+  }
+  return 'doppler 多普勒';
+}
+
 function searchItems(query, cache, limit = 10) {
   if (!cache || !cache.data) return { success: false, errorMsg: 'No cached base info. Call steamdt_get_base_info first.', data: [], count: 0 };
 
+  // Step 1: detect and strip special-style keywords
+  const detection = detectStyleFromQuery(query);
+  let searchQuery = detection.cleanedQuery || query;
+
+  // Step 2: if everything was style keywords, fall back to a reasonable item search
+  if (!searchQuery || searchQuery.length < 2) {
+    searchQuery = getFallbackQuery(detection.styles);
+  }
+
+  // Step 3: search with cleaned query
   const matches = [];
-  const qLower = query.toLowerCase();
+  const qLower = searchQuery.toLowerCase();
   for (const item of cache.data) {
     if (!item || !item.name || !item.marketHashName) continue;
     const nameLow = item.name.toLowerCase();
     const mhLow = item.marketHashName.toLowerCase();
     if (nameLow.includes(qLower) || mhLow.includes(qLower) ||
         normalizeText(nameLow).includes(normalizeText(qLower)) ||
-        containsAllKeywords(query, item.name, item.marketHashName)) {
+        containsAllKeywords(searchQuery, item.name, item.marketHashName)) {
       matches.push({ name: item.name, marketHashName: item.marketHashName, platformList: item.platformList });
       if (matches.length >= limit) break;
     }
   }
-  return { success: true, data: matches, count: matches.length, query };
+
+  // Step 4: assemble result with style annotations
+  const result = { success: true, data: matches, count: matches.length, query };
+  if (detection.styles.length > 0) {
+    result.detectedStyles = detection.styles;
+    result.cleanedQuery = searchQuery;
+    const styleValues = detection.styles.map(s => `"${s.key}"`).join(', ');
+    result.styleHint = `检测到特殊款式: ${detection.styles.map(s => s.label).join(', ')}。查询K线/均价时请传入 specialStyle 参数，可选值: ${styleValues}`;
+  }
+  return result;
 }
 
 // ── Tool Handlers ────────────────────────────────────────────────────────────
@@ -313,6 +459,11 @@ module.exports = {
   normalizeText,
   containsAllKeywords,
   searchItems,
+  // Style detection (search enhancement)
+  escapeRegex,
+  getStyleDetectors,
+  detectStyleFromQuery,
+  getFallbackQuery,
   // Tool handlers
   handleGetBaseInfo,
   handleSearchByName,
